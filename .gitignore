@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.db
+*.sqlite
+*.sqlite3
+server/uploaded_games/*
+!server/uploaded_games/.gitkeep
+client_player/downloads/*
+!client_player/downloads/.gitkeep
+key
