@@ -278,6 +278,26 @@ def handle_client(conn, addr):
         print(f"[斷線] {addr} (使用者: {user_data['username'] if user_data else '未登入'})")
         conn.close()
 
+def handle_upload(conn, game_name):
+    size = int.from_bytes(conn.recv(4), "big")
+    data = conn.recv(size)
+
+    game_dir = f"game_host/{game_name}"
+    os.makedirs(game_dir, exist_ok=True)
+
+    zip_path = os.path.join(game_dir, "game.zip")
+    with open(zip_path, "wb") as f:
+        f.write(data)
+
+    print(f"[上架完成] {game_name}")
+
+def handle_upload_connection(conn):
+    line = conn.recv(64).decode()
+    if line.startswith("UPLOAD"):
+        _, game_name = line.split()
+        handle_upload(conn, game_name)
+
+
 def start_server():
     """
     Server 啟動主迴圈

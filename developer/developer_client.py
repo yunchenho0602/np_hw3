@@ -10,6 +10,7 @@ import shutil
 # --- 路徑設定 ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
+sys.path.append(current_dir)
 sys.path.append(parent_dir)
 
 # --- Import ---
@@ -59,38 +60,19 @@ class DevClient:
             print(f"登入失敗: {response['message']}")
 
     def create_new_project(self):
-        """整合進介面的範本建立功能 (符合無須額外指令規定)"""
-        print("\n=== 建立新遊戲專案 (Scaffolding) ===")
-        new_game_name = input("請輸入新遊戲的資料夾名稱: ").strip()
-        if not new_game_name: return
-
-        template_dir = os.path.join(parent_dir, "template")
-        workspace_dir = os.path.join(parent_dir, "my_games_src")
-        target_dir = os.path.join(workspace_dir, new_game_name)
-
-        if not os.path.exists(template_dir):
-            print("[錯誤] 找不到範本資料夾，請確保 'template/' 存在。"); return
-        if os.path.exists(target_dir):
-            print(f"[錯誤] 專案 '{new_game_name}' 已存在。"); return
-
-        try:
-            if not os.path.exists(workspace_dir): os.makedirs(workspace_dir)
-            shutil.copytree(template_dir, target_dir)
-            # 自動初始化 config.json
-            config_path = os.path.join(target_dir, "game_config.json")
-            if os.path.exists(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                config["game_name"] = new_game_name
-                with open(config_path, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, indent=4, ensure_ascii=False)
-            print(f"[成功] 專案已建立於: {target_dir}")
-        except Exception as e:
-            print(f"[錯誤] 建立失敗: {e}")
+        from create_game_template import create_game
+        print("\n=== 建立新遊戲專案 ===")
+        name = input("請輸入新遊戲名稱: ").strip()
+        if not name:
+            print("名稱不能為空！")
+            return
+        
+        create_game(name)
+        print(f"[完成] 已建立新遊戲專案：{name}")
 
     def upload_game(self):
         """符合 Use Case D1 的互動式上傳流程"""
-        workspace = os.path.join(parent_dir, "my_games_src")
+        workspace = os.path.join(current_dir, "game")
         if not os.path.exists(workspace): os.makedirs(workspace)
 
         projects = [f for f in os.listdir(workspace) if os.path.isdir(os.path.join(workspace, f))]
@@ -147,7 +129,7 @@ class DevClient:
             # 若無法解析為數字，則預設建議原版本號
             suggested_ver = curr_ver
 
-        workspace = os.path.join(parent_dir, "my_games_src")
+        workspace = os.path.join(current_dir, "game")
         source_dir = os.path.join(workspace, target_game)
         if not os.path.exists(source_dir):
             print(f"[錯誤] 本地找不到專案資料夾 {target_game}，無法打包更新。"); return
