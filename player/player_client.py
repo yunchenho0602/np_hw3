@@ -104,8 +104,32 @@ class PlayerClient:
         send_json(self.sock, {"action": "CREATE_ROOM", "game_id": gid})
         res = recv_json(self.sock)
         if res['status'] == 'SUCCESS':
-            print(f"建立成功！房間ID: {res['room_id']}")
+            room_id = res['room_id']
+            print(f"建立成功！房間ID: {room_id}")
             print("請等待挑戰者加入... (注意：目前尚未實作房主自動跳轉，請用挑戰者視窗測試)")
+            try :
+                while True :
+                    time.sleep(1)
+                    send_json(self.sock, {"action":"CHECK_ROOM", "room_id":room_id})
+                    check_res = recv_json(self.sock)
+
+                    if check_res.get("game_start") :
+                        print("挑戰者已加入！遊戲啟動中...")
+                        self.start_game_subprocess(
+                            check_res['game_id'], 
+                            check_res['game_ip'], 
+                            check_res['game_port']
+                        )
+                        break
+                    elif check_res.get("status") == "FAIL":
+                        print("房間已失效")
+                        break
+                    else :
+                        players = check_res.get("players", [])
+                        sys.stdout.write(f"\r目前人數: {len(players)}/2")
+                        sys.stdout.flush()
+            except KeyboardInterrupt:
+                print("\n取消等待")
         else:
             print("建立失敗:", res.get('message'))
 

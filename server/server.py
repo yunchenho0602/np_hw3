@@ -127,6 +127,9 @@ def handle_client(conn, addr):
                                 if len(room["players"]) == room["max_players"]:
                                     print(f"[Server] 房間 {rid} 滿員，開始遊戲！")
                                     port = start_game_process(room["game_id"], rid)
+
+                                    room["game_port"] = port
+                                    room["status"] = "PLAYING"
                                     
                                     # 回傳開始資訊給觸發者
                                     response["game_start"] = True
@@ -139,6 +142,30 @@ def handle_client(conn, addr):
                             response = {"status": "FAIL", "message": "房間不存在"}
                 else:
                     response = {"status": "FAIL", "message": "請先登入"}
+            
+            elif action =="CHECK_ROOM" :
+                rid = request.get("room_id")
+                with rooms_lock:
+                    if rid in rooms :
+                        room = rooms[rid]
+                        if "game_port" in room:
+                            response = {
+                                "status": "SUCCESS",
+                                "game_start": True,
+                                "game_ip": "127.0.0.1",
+                                "game_port": room["game_port"],
+                                "game_id": room["game_id"]
+                            }
+                        else :
+                            response = {
+                                "status" : "WAITING",
+                                "players" : room["players"]
+                            }
+                    else :
+                        response = {
+                            "status" : "FAIL",
+                            "message" : "房間已關閉"
+                        }
 
             # 3. 回傳結果給 Client
             send_json(conn, response)
