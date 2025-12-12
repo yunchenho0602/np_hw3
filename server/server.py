@@ -41,6 +41,7 @@ def handle_client(conn, addr):
     """
     處理單一 Client 的所有請求 (執行緒函式)
     """
+    global room_id_counter
     print(f"[連線] 新連線來自: {addr}")
     
     user_data = None  # 用來紀錄目前連線的使用者是誰 (登入後才有值)
@@ -166,6 +167,22 @@ def handle_client(conn, addr):
                             "status" : "FAIL",
                             "message" : "房間已關閉"
                         }
+            elif action == "LIST_ROOM" :
+                if not user_data :
+                    response = {"status":"FAIL", "message":"請先登入"}
+                else :
+                    room_list = []
+                    with rooms_lock :
+                        for rid, r in rooms.items():
+                            if "game_port" not in r :
+                                room_list.append({
+                                    "room_id":rid,
+                                    "game_id":r["game_id"],
+                                    "players":len(r["players"]),
+                                    "max":r["max_players"],
+                                    "host":r["host"]
+                                })
+                    response = {"status":"SUCCESS", "rooms":room_list}
 
             # 3. 回傳結果給 Client
             send_json(conn, response)
