@@ -106,5 +106,40 @@ def get_games_by_author(author):
         conn.close()
         return [dict(g) for g in games]
 
+def update_game_version_db(name, author, new_version, new_desc):
+    """RQU-4: 更新遊戲版本資訊"""
+    with db_lock:
+        conn = get_db_connection()
+        try:
+            # 明確指定欄位名稱，避免 game_id 造成數量不符
+            conn.execute(
+                "UPDATE games SET version = ?, description = ? WHERE name = ? AND author_username = ?",
+                (new_version, new_desc, name, author)
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB Error] Update Game: {e}")
+            return False
+        finally:
+            conn.close()
+
+def delete_game_db(name, author):
+    """RQU-4: 刪除遊戲記錄"""
+    with db_lock:
+        conn = get_db_connection()
+        try:
+            conn.execute(
+                "DELETE FROM games WHERE name = ? AND author_username = ?",
+                (name, author)
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB Error] Delete Game: {e}")
+            return False
+        finally:
+            conn.close()
+
 if __name__ == "__main__":
     init_db()

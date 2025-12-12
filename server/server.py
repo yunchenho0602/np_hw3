@@ -4,6 +4,8 @@ import json
 import sys
 import os
 import subprocess
+import shutil
+import zipfile
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -240,6 +242,47 @@ def handle_client(conn, addr):
                 # 取得該開發者的遊戲 (符合 PDF Step 7)
                 my_games = get_games_by_author(user_data['username'])
                 response = {"status": "SUCCESS", "games": my_games}
+
+            # server/server.py 處理 Action 的部分
+
+            elif action == "UPDATE_GAME":
+                # 接收新檔案並覆蓋舊檔案
+                send_json(conn, {"status": "READY"})
+                zip_name = request['filename']
+                zip_path = os.path.join(current_dir, "uploaded_game", zip_name)
+                
+                with open(zip_path, "wb") as f:
+                    received = 0
+                    while received < request['size']:
+                        chunk = recv_frame(conn)
+                        if not chunk: break
+                        f.write(chunk)
+                        received += len(chunk)
+                
+                # 自動解壓覆蓋 (確保玩家玩到的是新版)
+                extract_path = zip_path.replace(".zip", "")
+                if os.path.exists(extract_path):
+                    shutil.rmtree(extract_path)
+                with zipfile.ZipFile(zip_path, 'r') as z:
+                    z.extractall(extract_path)
+
+                # 更新資料庫
+                from db_server import update_game_version_db
+                update_game_version_db(request['game_name'], user_data['username'], request['version'], request['description'])
+                response = {"status": "SUCCESS", "message": f"遊戲 {request['game_name']} 已更新至 v{request['version']}"}
+
+            elif action == "DELETE_GAME":
+                g_name = request['game_name']
+                from db_server import delete_game_db
+                if delete_game_db(g_name, user_data['username']):
+                    # 同步清理實體檔案，避免下架後還能被搜到
+                    zip_path = os.path.join(current_dir, "uploaded_game", f"{g_name}.zip")
+                    folder_path = os.path.join(current_dir, "uploaded_game", g_name)
+                    if os.path.exists(zip_path): os.remove(zip_path)
+                    if os.path.exists(folder_path): shutil.rmtree(folder_path)
+                    response = {"status": "SUCCESS", "message": "下架成功"}
+                else:
+                    response = {"status": "FAIL", "message": "下架失敗"}
 
             # 3. 回傳結果給 Client
             send_json(conn, response)
