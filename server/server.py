@@ -12,9 +12,9 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
 # --- Import 自訂模組 ---
-from common.protocol import send_json, recv_json, recv_frame
+from common.protocol import send_json, recv_json, recv_frame, send_frame
 from common.constant import SERVER_PORT, SERVER_IP
-from db_server import register_user, login_check, add_game, get_games_by_author
+from db_server import register_user, login_check, add_game, get_db_connection, get_games_by_author, record_play, add_review, get_game_reviews
 
 # --- Server 設定 ---
 HOST = '0.0.0.0'  # 監聽所有網卡 (讓別人也能連進來)
@@ -30,12 +30,12 @@ def start_game_process(game_id, room_id):
     game_port = temp_sock.getsockname()[1]
     temp_sock.close()
 
-    game_dir = os.path.join("server", "uploaded_game", game_id)
+    game_dir = os.path.join(current_dir, "uploaded_game", game_id)
     server_script = os.path.join(game_dir, "game_server.py")
 
     cmd = [sys.executable, server_script, str(game_port), str(room_id)]
-    print(f"[Server] 正在啟動遊戲 Server, Port: {game_port}")
-    subprocess.Popen(cmd)
+
+    subprocess.Popen(cmd, cwd=game_dir)
 
     return game_port
 
@@ -91,120 +91,6 @@ def handle_client(conn, addr):
                 else:
                     response = {"status": "FAIL", "message": "帳號或密碼錯誤"}
 
-            # === 其他未完成功能 (先留空) ===
-            elif action == "LIST_GAMES":
-                games_dir = os.path.join(current_dir, "uploaded_game")
-                if not os.path.exists(games_dir): os.makedirs(games_dir)
-                # 列出資料夾名稱當作 Game ID
-                game_list = [f for f in os.listdir(games_dir) if os.path.isdir(os.path.join(games_dir, f))]
-                response = {"status": "SUCCESS", "games": game_list}
-
-            # --- 4. 建立房間 ---
-            elif action == "CREATE_ROOM":
-                if user_data:
-                    game_id = request.get("game_id")
-                    with rooms_lock:
-                        rid = str(room_id_counter)
-                        room_id_counter += 1
-                        rooms[rid] = {
-                            "game_id": game_id,
-                            "players": [user_data['username']],
-                            "max_players": 2 # 暫時寫死
-                        }
-                    response = {"status": "SUCCESS", "room_id": rid, "message": "房間建立成功"}
-                else:
-                    response = {"status": "FAIL", "message": "請先登入"}
-
-            # --- 5. 加入房間 ---
-            elif action == "JOIN_ROOM":
-                if user_data:
-                    rid = request.get("room_id")
-                    with rooms_lock:
-                        if rid in rooms:
-                            room = rooms[rid]
-                            if len(room["players"]) < room["max_players"]:
-                                room["players"].append(user_data['username'])
-                                response = {"status": "SUCCESS", "message": "加入成功"}
-                                
-                                # 檢查是否滿房 -> 開始遊戲
-                                if len(room["players"]) == room["max_players"]:
-                                    print(f"[Server] 房間 {rid} 滿員，開始遊戲！")
-                                    port = start_game_process(room["game_id"], rid)
-
-                                    room["game_port"] = port
-                                    room["status"] = "PLAYING"
-                                    
-                                    # 回傳開始資訊給觸發者
-                                    response["game_start"] = True
-                                    response["game_ip"] = SERVER_IP # 在 Demo 時通常是 localhost
-                                    response["game_port"] = port
-                                    response["game_id"] = room["game_id"]
-                            else:
-                                response = {"status": "FAIL", "message": "房間已滿"}
-                        else:
-                            response = {"status": "FAIL", "message": "房間不存在"}
-                else:
-                    response = {"status": "FAIL", "message": "請先登入"}
-            
-            elif action =="CHECK_ROOM" :
-                rid = request.get("room_id")
-                with rooms_lock:
-                    if rid in rooms :
-                        room = rooms[rid]
-                        if "game_port" in room:
-                            response = {
-                                "status": "SUCCESS",
-                                "game_start": True,
-                                "game_ip": SERVER_IP,
-                                "game_port": room["game_port"],
-                                "game_id": room["game_id"]
-                            }
-                        else :
-                            response = {
-                                "status" : "WAITING",
-                                "players" : room["players"]
-                            }
-                    else :
-                        response = {
-                            "status" : "FAIL",
-                            "message" : "房間已關閉"
-                        }
-            elif action == "LIST_ROOM" :
-                if not user_data :
-                    response = {"status":"FAIL", "message":"請先登入"}
-                else :
-                    room_list = []
-                    with rooms_lock :
-                        for rid, r in rooms.items():
-                            if "game_port" not in r :
-                                room_list.append({
-                                    "room_id":rid,
-                                    "game_id":r["game_id"],
-                                    "players":len(r["players"]),
-                                    "max":r["max_players"],
-                                    "host":r["host"]
-                                })
-                    response = {"status":"SUCCESS", "rooms":room_list}
-            
-            elif action == "DOWNLOAD" :
-                game_id = request.get("game_id")
-                zip_path = os.path.join(current_dir, "uploaded_game", f"{game_id}.zip")
-
-                if os.path.exists(zip_path) :
-                    file_size = os.path.getsize(zip_path)
-                    send_json(conn, {"status":"SUCCESS", "size":file_size})
-
-                    from common.protocol import send_frame
-                    with open(zip_path, "rb") as f:
-                        while True :
-                            chunk = f.read(60000)
-                            if not chunk :
-                                break
-                            send_frame(conn, chunk)
-                    print(f"[Server] 已傳送遊戲檔案: {game_id}")
-                else :
-                    send_json(conn, {"status":"FAIL", "message":"找不到遊戲檔案"})
-
             elif action == "UPLOAD":
                 if not user_data or user_data['role'] != 'developer':
                     send_json(conn, {"status": "FAIL", "message": "權限不足"})
@@ -228,7 +114,12 @@ def handle_client(conn, addr):
                             if not chunk: break
                             f.write(chunk)
                             received += len(chunk)
-                    
+
+                    extract_path = zip_path.replace(".zip", "")
+                    if os.path.exists(extract_path): shutil.rmtree(extract_path)
+                    with zipfile.ZipFile(zip_path, 'r') as zf:
+                        zf.extractall(extract_path)
+                        
                     # 2. 寫入資料庫 (符合 PDF Step 6)
                     # 我們將 zip 檔名作為路徑存入
                     if add_game(game_name, version, desc, filename, user_data['username']):
@@ -242,8 +133,6 @@ def handle_client(conn, addr):
                 # 取得該開發者的遊戲 (符合 PDF Step 7)
                 my_games = get_games_by_author(user_data['username'])
                 response = {"status": "SUCCESS", "games": my_games}
-
-            # server/server.py 處理 Action 的部分
 
             elif action == "UPDATE_GAME":
                 # 接收新檔案並覆蓋舊檔案
@@ -284,7 +173,103 @@ def handle_client(conn, addr):
                 else:
                     response = {"status": "FAIL", "message": "下架失敗"}
 
-            # 3. 回傳結果給 Client
+            elif action == "LIST_GAMES":
+                conn_db = get_db_connection()
+                # 結合平均評分與評論數 (P1 要求)
+                query = '''
+                    SELECT g.*, AVG(r.rating) as avg_rating, COUNT(r.id) as review_count
+                    FROM games g LEFT JOIN reviews r ON g.name = r.game_name
+                    GROUP BY g.name
+                '''
+                games = [dict(row) for row in conn_db.execute(query).fetchall()]
+                conn_db.close()
+                response = {"status": "SUCCESS", "games": games}
+
+            elif action == "DOWNLOAD":
+                zip_path = os.path.join(current_dir, "uploaded_game", f"{request['game_id']}.zip")
+                if os.path.exists(zip_path):
+                    send_json(conn, {"status": "SUCCESS", "size": os.path.getsize(zip_path)})
+                    with open(zip_path, "rb") as f:
+                        while chunk := f.read(60000): send_frame(conn, chunk)
+                    continue 
+                else: response = {"status": "FAIL", "message": "檔案不存在"}
+
+            # --- 4. 房間管理與遊玩紀錄 (RQU-5, 6) ---
+            elif action == "CREATE_ROOM":
+                global room_id_counter
+                rid = str(room_id_counter)
+                room_id_counter += 1
+                with rooms_lock:
+                    rooms[rid] = {"game_id": request['game_id'], "players": [user_data['username']], "status": "WAITING"}
+                response = {"status": "SUCCESS", "room_id": rid}
+
+            elif action == "LIST_ROOMS":
+                with rooms_lock:
+                    r_list = [{"room_id": k, "game_id": v["game_id"], "player_count": len(v["players"]), "status": v["status"]} for k, v in rooms.items()]
+                response = {"status": "SUCCESS", "rooms": r_list}
+
+            elif action == "JOIN_ROOM":
+                rid = request.get('room_id') # 確保這裡用的是 request
+                with rooms_lock:
+                    room = rooms.get(rid)
+                    if room and room['status'] == "WAITING":
+                        # 1. 加入玩家列表
+                        room['players'].append(user_data['username'])
+                        # 2. 授予評分資格 (RQU-6)
+                        record_play(user_data['username'], room['game_id'])
+                        
+                        # 3. 啟動遊戲進程
+                        g_port = start_game_process(room['game_id'], rid)
+                        room['status'] = "PLAYING"
+                        room['game_port'] = g_port
+                        
+                        # 4. ★ 關鍵：從資料庫抓取該遊戲的最新版本號 (RQU-5 P2)
+                        conn_db = get_db_connection()
+                        g_info = conn_db.execute("SELECT version FROM games WHERE name=?", (room['game_id'],)).fetchone()
+                        conn_db.close()
+                        
+                        # 5. 回傳完整資訊給挑戰者，解決 KeyError
+                        response = {
+                            "status": "SUCCESS", 
+                            "game_start": True, 
+                            "game_id": room['game_id'], # 補上這個
+                            "version": g_info['version'] if g_info else "1.0.0", # 補上這個
+                            "game_ip": SERVER_IP, 
+                            "game_port": g_port
+                        }
+                    else:
+                        response = {"status": "FAIL", "message": "房間已滿、不存在或已在遊戲中"}
+
+            elif action == "CHECK_ROOM":
+                rid = request.get('room_id')
+                with rooms_lock:
+                    room = rooms.get(rid)
+                    # 如果人數滿了且遊戲已啟動
+                    if room and len(room['players']) >= 2:
+                        # 抓取版本號
+                        conn_db = get_db_connection()
+                        g_info = conn_db.execute("SELECT version FROM games WHERE name=?", (room['game_id'],)).fetchone()
+                        conn_db.close()
+
+                        # 回傳完整資訊給房主，確保房主也能自動校驗版本
+                        response = {
+                            "status": "SUCCESS", 
+                            "game_start": True, 
+                            "game_id": room['game_id'],
+                            "version": g_info['version'] if g_info else "1.0.0",
+                            "game_ip": SERVER_IP, 
+                            "game_port": room.get('game_port')
+                        }
+                    else:
+                        response = {"status": "SUCCESS", "game_start": False, "players": room['players'] if room else []}
+            # --- 5. 評價系統 (RQU-6) ---
+            elif action == "SUBMIT_REVIEW":
+                status, msg = add_review(request['game_name'], user_data['username'], request['rating'], request['comment'])
+                response = {"status": "SUCCESS" if status else "FAIL", "message": msg}
+
+            elif action == "GET_REVIEWS":
+                response = {"status": "SUCCESS", "reviews": get_game_reviews(request['game_name'])}
+
             send_json(conn, response)
 
     except Exception as e:

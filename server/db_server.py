@@ -11,37 +11,15 @@ def get_db_connection():
     return conn
 
 def init_db():
-    if os.path.exists(DB_PATH):
-        print(f"[DB] 資料庫已存在: {DB_PATH}")
-        return
-
-    print(f"[DB] 建立新資料庫: {DB_PATH}")
     with db_lock:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # 1. 建立使用者資料表
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                username TEXT PRIMARY KEY,
-                password TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'player'
-            )
-        ''')
-        
-        # 2. 建立遊戲資料表 (預先準備好，之後上架會用到)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS games (
-                game_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                version TEXT NOT NULL,
-                description TEXT,
-                exe_path TEXT NOT NULL,
-                author_username TEXT NOT NULL,
-                FOREIGN KEY (author_username) REFERENCES users (username)
-            )
-        ''')
-        
+        cursor.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, role TEXT DEFAULT "player")')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS games (
+            game_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, 
+            version TEXT, description TEXT, exe_path TEXT, author_username TEXT)''')
+        cursor.execute('CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, game_name TEXT, username TEXT, rating INTEGER, comment TEXT)')
+        cursor.execute('CREATE TABLE IF NOT EXISTS play_history (username TEXT, game_name TEXT, PRIMARY KEY (username, game_name))')
         conn.commit()
         conn.close()
 
@@ -140,6 +118,29 @@ def delete_game_db(name, author):
             return False
         finally:
             conn.close()
+
+def record_play(username, game_name):
+    with db_lock:
+        conn = get_db_connection()
+        conn.execute("INSERT OR IGNORE INTO play_history (username, game_name) VALUES (?, ?)", (username, game_name))
+        conn.commit()
+        conn.close()
+
+def add_review(game_name, username, rating, comment):
+    with db_lock:
+        conn = get_db_connection()
+        played = conn.execute("SELECT 1 FROM play_history WHERE username=? AND game_name=?", (username, game_name)).fetchone()
+        if not played: return False, "需遊玩過才能評分"
+        conn.execute("INSERT INTO reviews (game_name, username, rating, comment) VALUES (?, ?, ?, ?)", (game_name, username, rating, comment))
+        conn.commit()
+        conn.close()
+        return True, "評價成功"
+
+def get_game_reviews(game_name):
+    conn = get_db_connection()
+    res = conn.execute("SELECT username, rating, comment FROM reviews WHERE game_name=?", (game_name,)).fetchall()
+    conn.close()
+    return [dict(r) for r in res]
 
 if __name__ == "__main__":
     init_db()
