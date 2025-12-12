@@ -4,17 +4,16 @@ import sys
 import os
 import subprocess
 import time
+import zipfile
+import io
 
 # --- 路徑設定 ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from common.protocol import send_json, recv_json
-from common.constant import SERVER_PORT
-
-# 預設 IP (開發時用 localhost)
-SERVER_IP = '127.0.0.1'
+from common.protocol import send_json, recv_json, recv_frame
+from common.constant import SERVER_PORT, SERVER_IP
 
 class PlayerClient:
     def __init__(self):
@@ -30,18 +29,61 @@ class PlayerClient:
             print("[錯誤] 無法連線到 Server")
             sys.exit(1)
 
+    def download_game(self, game_id):
+        """實作從伺服器下載 ZIP 並解壓縮到玩家獨立資料夾"""
+        print(f"[系統] 正在從伺服器請求遊戲檔案: {game_id}")
+        
+        # 1. 發送下載請求
+        send_json(self.sock, {"action": "DOWNLOAD", "game_id": game_id})
+        
+        # 2. 接收伺服器回應
+        res = recv_json(self.sock)
+        if res['status'] == 'SUCCESS':
+            file_size = res['size']
+            print(f"[系統] 準備接收檔案 ({file_size} bytes)...")
+            
+            # 3. 接收二進制數據
+            file_data = bytearray()
+            while len(file_data) < file_size:
+                chunk = recv_frame(self.sock)
+                if not chunk: break
+                file_data.extend(chunk)
+                # 顯示簡單進度
+                sys.stdout.write(".")
+                sys.stdout.flush()
+            
+            # 4. 定義存放路徑: downloads/{username}/{game_id}/
+            # 使用 parent_dir 確保在專案根目錄下的 downloads
+            player_download_root = os.path.join(parent_dir, "downloads", self.user_data['username'], game_id)
+            if not os.path.exists(player_download_root):
+                os.makedirs(player_download_root)
+            
+            # 5. 解壓縮
+            print(f"\n[系統] 正在解壓縮至 {player_download_root}")
+            with zipfile.ZipFile(io.BytesIO(file_data)) as zf:
+                zf.extractall(player_download_root)
+            
+            return player_download_root
+        else:
+            print(f"[錯誤] 下載失敗: {res.get('message')}")
+            return None
+
     def start_game_subprocess(self, game_id, ip, port):
-        """啟動遊戲 (run.py)"""
-        # 正式版路徑應為: player/downloads/{username}/{game_id}/run.py
-        # 測試版路徑直接指向: server/uploaded_games/{game_id}/run.py
-        
-        game_path = os.path.join(parent_dir, "server", "uploaded_games", game_id, "run.py")
-        
-        if not os.path.exists(game_path):
-            print(f"[錯誤] 找不到遊戲檔案: {game_path}")
+        """修改後的啟動邏輯：先下載，再執行本地檔案"""
+        # --- 關鍵修改：先下載遊戲包 ---
+        local_dir = self.download_game(game_id)
+        if not local_dir:
+            print("[錯誤] 無法啟動遊戲，因為檔案下載失敗。")
             return
 
-        # 組合啟動指令
+        # --- 執行下載後的 run.py ---
+        game_path = os.path.join(local_dir, "run.py")
+        
+        if not os.path.exists(game_path):
+            print(f"[錯誤] 下載的包中找不到啟動檔 run.py: {game_path}")
+            return
+
+        # 組合啟動指令 (配合 sys.argv)
         cmd = [
             sys.executable, 
             game_path,
@@ -49,9 +91,8 @@ class PlayerClient:
             ip,
             str(port)
         ]
-        print(f"[系統] 啟動遊戲中... {cmd}")
-        subprocess.Popen(cmd) # 開新視窗執行
-
+        print(f"[系統] 正在啟動本地遊戲實例: {cmd}")
+        subprocess.Popen(cmd)
     def main_menu(self):
         self.connect()
         while True:

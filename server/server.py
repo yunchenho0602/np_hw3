@@ -10,9 +10,9 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
 # --- Import 自訂模組 ---
-from common.protocol import send_json, recv_json
-from common.constant import SERVER_PORT
-from db_server import register_user, login_check
+from common.protocol import send_json, recv_json, recv_frame
+from common.constant import SERVER_PORT, SERVER_IP
+from db_server import register_user, login_check, add_game, get_games_by_author
 
 # --- Server 設定 ---
 HOST = '0.0.0.0'  # 監聽所有網卡 (讓別人也能連進來)
@@ -134,7 +134,7 @@ def handle_client(conn, addr):
                                     
                                     # 回傳開始資訊給觸發者
                                     response["game_start"] = True
-                                    response["game_ip"] = "127.0.0.1" # 在 Demo 時通常是 localhost
+                                    response["game_ip"] = SERVER_IP # 在 Demo 時通常是 localhost
                                     response["game_port"] = port
                                     response["game_id"] = room["game_id"]
                             else:
@@ -153,7 +153,7 @@ def handle_client(conn, addr):
                             response = {
                                 "status": "SUCCESS",
                                 "game_start": True,
-                                "game_ip": "127.0.0.1",
+                                "game_ip": SERVER_IP,
                                 "game_port": room["game_port"],
                                 "game_id": room["game_id"]
                             }
@@ -183,6 +183,63 @@ def handle_client(conn, addr):
                                     "host":r["host"]
                                 })
                     response = {"status":"SUCCESS", "rooms":room_list}
+            
+            elif action == "DOWNLOAD" :
+                game_id = request.get("game_id")
+                zip_path = os.path.join(current_dir, "uploaded_game", f"{game_id}.zip")
+
+                if os.path.exists(zip_path) :
+                    file_size = os.path.getsize(zip_path)
+                    send_json(conn, {"status":"SUCCESS", "size":file_size})
+
+                    from common.protocol import send_frame
+                    with open(zip_path, "rb") as f:
+                        while True :
+                            chunk = f.read(60000)
+                            if not chunk :
+                                break
+                            send_frame(conn, chunk)
+                    print(f"[Server] 已傳送遊戲檔案: {game_id}")
+                else :
+                    send_json(conn, {"status":"FAIL", "message":"找不到遊戲檔案"})
+
+            elif action == "UPLOAD":
+                if not user_data or user_data['role'] != 'developer':
+                    send_json(conn, {"status": "FAIL", "message": "權限不足"})
+                    continue
+
+                game_name = request.get("game_name")
+                version = request.get("version")
+                desc = request.get("description")
+                filename = request.get("filename")
+                file_size = request.get("size")
+
+                # 1. 準備接收檔案
+                zip_path = os.path.join(current_dir, "uploaded_game", filename)
+                send_json(conn, {"status": "READY"})
+                
+                try:
+                    with open(zip_path, "wb") as f:
+                        received = 0
+                        while received < file_size:
+                            chunk = recv_frame(conn)
+                            if not chunk: break
+                            f.write(chunk)
+                            received += len(chunk)
+                    
+                    # 2. 寫入資料庫 (符合 PDF Step 6)
+                    # 我們將 zip 檔名作為路徑存入
+                    if add_game(game_name, version, desc, filename, user_data['username']):
+                        response = {"status": "SUCCESS", "message": f"遊戲 {game_name} 上架成功"}
+                    else:
+                        response = {"status": "FAIL", "message": "資料庫寫入失敗"}
+                except Exception as e:
+                    response = {"status": "FAIL", "message": f"上傳中斷: {e}"}
+
+            elif action == "LIST_MY_GAMES":
+                # 取得該開發者的遊戲 (符合 PDF Step 7)
+                my_games = get_games_by_author(user_data['username'])
+                response = {"status": "SUCCESS", "games": my_games}
 
             # 3. 回傳結果給 Client
             send_json(conn, response)
@@ -197,6 +254,11 @@ def start_server():
     """
     Server 啟動主迴圈
     """
+    required_dir = [os.path.join(current_dir, "uploaded_game")]
+    for d in required_dir :
+        if not os.path.exists(d) :
+            print(f"[系統] 自動建立遺失的資料夾: {d}")
+            os.makedirs(d)
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # 允許 Port 重複使用 (避免重啟 Server 時報錯 "Address already in use")
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -224,4 +286,6 @@ def start_server():
         server.close()
 
 if __name__ == "__main__":
+    from db_server import init_db
+    init_db()
     start_server()

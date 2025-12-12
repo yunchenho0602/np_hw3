@@ -8,3 +8,5 @@ server/uploaded_games/*
 client_player/downloads/*
 !client_player/downloads/.gitkeep
 key
+dev_demo
+my_games_src

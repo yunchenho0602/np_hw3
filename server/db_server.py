@@ -79,5 +79,32 @@ def login_check(username, password):
             return dict(user)
         return None
 
+def add_game(name, version, description, exe_path, author):
+    """將上架的遊戲資訊存入資料庫 (符合 PDF Step 6)"""
+    with db_lock:
+        conn = get_db_connection()
+        try:
+            conn.execute(
+                "INSERT INTO games (name, version, description, exe_path, author_username) VALUES (?, ?, ?, ?, ?)",
+                (name, version, description, exe_path, author)
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB Error] Add Game: {e}")
+            return False
+        finally:
+            conn.close()
+
+def get_games_by_author(author):
+    """取得特定開發者上架的遊戲列表 (符合 PDF Step 7)"""
+    with db_lock:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM games WHERE author_username = ?", (author,))
+        games = cursor.fetchall()
+        conn.close()
+        return [dict(g) for g in games]
+
 if __name__ == "__main__":
     init_db()
