@@ -1,0 +1,9 @@
+{
+    "game_name":"Tetris Battle", 
+    "version":"1.0",
+    "exe_file":"run.py",
+    "server.exe":"game_server.py",
+    "discription":"classical Tetris game",
+    "min_player":2,
+    "max_player":2
+}

@@ -46,6 +46,7 @@ def init_db():
         conn.close()
 
 def register_user(username, password, role='player'):
+
     with db_lock:
         conn = get_db_connection()
         try:
@@ -80,7 +81,3 @@ def login_check(username, password):
 
 if __name__ == "__main__":
     init_db()
-    # if register_user("test_dev", "1234", "developer"):
-    #     print("測試帳號 test_dev 註冊成功")
-    # else:
-    #     print("測試帳號 test_dev 已存在")

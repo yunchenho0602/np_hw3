@@ -3,6 +3,7 @@ import threading
 import json
 import sys
 import os
+import subprocess
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -16,6 +17,25 @@ from db_server import register_user, login_check
 # --- Server 設定 ---
 HOST = '0.0.0.0'  # 監聽所有網卡 (讓別人也能連進來)
 PORT = SERVER_PORT
+
+rooms = {}
+room_id_counter = 100
+rooms_lock = threading.Lock()
+
+def start_game_process(game_id, room_id):
+    temp_sock = socket.socket()
+    temp_sock.bind(('', 0))
+    game_port = temp_sock.getsockname()[1]
+    temp_sock.close()
+
+    game_dir = os.path.join("server", "uploaded_game", game_id)
+    server_script = os.path.join(game_dir, "game_server.py")
+
+    cmd = [sys.executable, server_script, str(game_port), str(room_id)]
+    print(f"[Server] 正在啟動遊戲 Server, Port: {game_port}")
+    subprocess.Popen(cmd)
+
+    return game_port
 
 def handle_client(conn, addr):
     """
@@ -70,7 +90,55 @@ def handle_client(conn, addr):
 
             # === 其他未完成功能 (先留空) ===
             elif action == "LIST_GAMES":
-                response = {"status": "FAIL", "message": "功能尚未實作"}
+                games_dir = os.path.join(current_dir, "uploaded_game")
+                if not os.path.exists(games_dir): os.makedirs(games_dir)
+                # 列出資料夾名稱當作 Game ID
+                game_list = [f for f in os.listdir(games_dir) if os.path.isdir(os.path.join(games_dir, f))]
+                response = {"status": "SUCCESS", "games": game_list}
+
+            # --- 4. 建立房間 ---
+            elif action == "CREATE_ROOM":
+                if user_data:
+                    game_id = request.get("game_id")
+                    with rooms_lock:
+                        rid = str(room_id_counter)
+                        room_id_counter += 1
+                        rooms[rid] = {
+                            "game_id": game_id,
+                            "players": [user_data['username']],
+                            "max_players": 2 # 暫時寫死
+                        }
+                    response = {"status": "SUCCESS", "room_id": rid, "message": "房間建立成功"}
+                else:
+                    response = {"status": "FAIL", "message": "請先登入"}
+
+            # --- 5. 加入房間 ---
+            elif action == "JOIN_ROOM":
+                if user_data:
+                    rid = request.get("room_id")
+                    with rooms_lock:
+                        if rid in rooms:
+                            room = rooms[rid]
+                            if len(room["players"]) < room["max_players"]:
+                                room["players"].append(user_data['username'])
+                                response = {"status": "SUCCESS", "message": "加入成功"}
+                                
+                                # 檢查是否滿房 -> 開始遊戲
+                                if len(room["players"]) == room["max_players"]:
+                                    print(f"[Server] 房間 {rid} 滿員，開始遊戲！")
+                                    port = start_game_process(room["game_id"], rid)
+                                    
+                                    # 回傳開始資訊給觸發者
+                                    response["game_start"] = True
+                                    response["game_ip"] = "127.0.0.1" # 在 Demo 時通常是 localhost
+                                    response["game_port"] = port
+                                    response["game_id"] = room["game_id"]
+                            else:
+                                response = {"status": "FAIL", "message": "房間已滿"}
+                        else:
+                            response = {"status": "FAIL", "message": "房間不存在"}
+                else:
+                    response = {"status": "FAIL", "message": "請先登入"}
 
             # 3. 回傳結果給 Client
             send_json(conn, response)
