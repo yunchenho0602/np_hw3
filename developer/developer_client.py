@@ -137,12 +137,19 @@ class DevClient:
         print(f"\n=== 更新遊戲: {target_game} ===")
         new_ver = input(f"新版本號 [預設建議 {suggested_ver}]: ").strip() or suggested_ver
         
-        new_desc = input("更新說明: ").strip()
+        new_desc = input("更新說明 (留空則保留原描述): ").strip()
+
+        # 若有輸入，附加到原描述後面
+        if new_desc:
+            merged_desc = f"{my_games[idx]['description']}\n\n[更新 {new_ver}]\n{new_desc}"
+        else:
+            merged_desc = my_games[idx]['description']
+
 
         # 確認時就會看到正確的版本號了
         if input(f"確認更新 {target_game} 至 v{new_ver}？(y/n): ").lower() != 'y': 
             return
-        self._send_zip_payload(source_dir, target_game, new_ver, new_desc, target_game, "UPDATE_GAME")
+        self._send_zip_payload(source_dir, target_game, new_ver, merged_desc, target_game, "UPDATE_GAME")
 
     def remove_game_flow(self):
         """實作 RQU-4：下架遊戲"""
