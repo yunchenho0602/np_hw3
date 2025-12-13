@@ -1,53 +1,24 @@
-# 通用遊戲模板：game_server.py
+import sys
 import socket
 import threading
-import sys
-import os
-
-current = os.path.dirname(os.path.abspath(__file__))
-
-while True:
-    parent = os.path.dirname(current)
-    if parent == current:
-        break  # 找到 filesystem root 了
-    if os.path.isdir(os.path.join(parent, "common")):
-        sys.path.insert(0, parent)
-        break
-    current = parent
-
-from common.protocol import send_json, recv_json
-players = []
+from protocol import send_json, recv_json
 
 def handle_player(conn, addr):
-    print(f"[玩家連線] {addr}")
-    players.append(conn)
-
-    try:
-        while True:
-            data = recv_json(conn)
-            print(f"[收到] {addr}: {data}")
-
-            # 廣播給所有玩家
-            for p in players:
-                if p != conn:
-                    send_json(p, {"from": str(addr), "data": data})
-    except:
-        print(f"[玩家離線] {addr}")
-        players.remove(conn)
-        conn.close()
+    print(f"[遊戲] 玩家連線: {addr}")
+    # 處理遊戲邏輯...
 
 def start_game_server(port, room_id):
-    print(f"[Game Server] Start at port={port}, room={room_id}")
-
-    s = socket.socket()
-    s.bind(("0.0.0.0", int(port)))
-    s.listen(8)
-
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(('0.0.0.0', int(port)))
+    s.listen(2)
+    print(f"[遊戲伺服器] 已啟動於 Port: {port}, 房間 ID: {room_id}")
+    
     while True:
         conn, addr = s.accept()
         threading.Thread(target=handle_player, args=(conn, addr), daemon=True).start()
 
 if __name__ == "__main__":
-    port = sys.argv[1]
-    room = sys.argv[2] if len(sys.argv) > 2 else "None"
-    start_game_server(port, room)
+    # Server 啟動格式: python game_server.py [port] [room_id]
+    if len(sys.argv) < 2:
+        sys.exit(1)
+    start_game_server(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "None")

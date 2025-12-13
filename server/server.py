@@ -23,6 +23,9 @@ PORT = SERVER_PORT
 rooms = {}
 room_id_counter = 100
 rooms_lock = threading.Lock()
+online_users = {}  # username -> conn
+online_users_lock = threading.Lock()
+
 
 def start_game_process(game_id, room_id):
     temp_sock = socket.socket()
@@ -79,17 +82,29 @@ def handle_client(conn, addr):
             elif action == "LOGIN":
                 username = request.get("username")
                 password = request.get("password")
-                
+
                 user = login_check(username, password)
-                if user:
-                    user_data = user
-                    response = {
-                        "status": "SUCCESS", 
-                        "message": "登入成功",
-                        "user": {"username": user['username'], "role": user['role']}
-                    }
-                else:
+                if not user:
                     response = {"status": "FAIL", "message": "帳號或密碼錯誤"}
+                else:
+                    with online_users_lock:
+                        if username in online_users:
+                            response = {
+                                "status": "FAIL",
+                                "message": "此帳號已在其他地方登入"
+                            }
+                        else:
+                            user_data = user
+                            online_users[username] = conn
+                            response = {
+                                "status": "SUCCESS",
+                                "message": "登入成功",
+                                "user": {
+                                    "username": user['username'],
+                                    "role": user['role']
+                                }
+                            }
+
 
             elif action == "UPLOAD":
                 if not user_data or user_data['role'] != 'developer':
@@ -119,6 +134,18 @@ def handle_client(conn, addr):
                     if os.path.exists(extract_path): shutil.rmtree(extract_path)
                     with zipfile.ZipFile(zip_path, 'r') as zf:
                         zf.extractall(extract_path)
+
+                    client_dir = os.path.join(extract_path, "client")
+                    player_zip = os.path.join(current_dir, "uploaded_game", f"{game_name}.zip")
+
+                    if not os.path.isdir(client_dir):
+                        raise Exception("上傳的遊戲缺少 client 資料夾")
+
+                    shutil.make_archive(
+                        player_zip.replace(".zip", ""),
+                        "zip",
+                        client_dir
+                    )
                         
                     # 2. 寫入資料庫 (符合 PDF Step 6)
                     # 我們將 zip 檔名作為路徑存入
@@ -258,6 +285,7 @@ def handle_client(conn, addr):
                             "message": "房間已滿、不存在或已在遊戲中"
                         }
 
+
             elif action == "CHECK_ROOM":
                 rid = request.get('room_id')
                 with rooms_lock:
@@ -288,6 +316,9 @@ def handle_client(conn, addr):
     except Exception as e:
         print(f"[異常] {addr} 發生錯誤: {e}")
     finally:
+        if user_data:
+            with online_users_lock:
+                online_users.pop(user_data['username'], None)
         print(f"[斷線] {addr} (使用者: {user_data['username'] if user_data else '未登入'})")
         conn.close()
 

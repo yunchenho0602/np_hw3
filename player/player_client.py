@@ -45,7 +45,7 @@ class PlayerClient:
             print("登入成功！")
             self.user_data = res['user']
         else:
-            print("登入失敗:", res.get('message'))
+            print(f"登入失敗: {res.get('message', '未知錯誤')}")
 
     # === 核心功能：版本管理與自動下載 (RQU-5 P2, P3) ===
 
@@ -181,7 +181,10 @@ class PlayerClient:
             print(f"\n[啟動] 正在連線至 {ip}:{port}")
             time.sleep(1) # 給伺服器一點啟動時間
             # 關鍵：cwd=game_dir 讓 run.py 能正確 import 自己的 protocol.py
-            subprocess.Popen([sys.executable, script_path, self.user_data['username'], ip, str(port)], cwd=game_dir)
+            subprocess.run(
+                [sys.executable, script_path, self.user_data['username'], ip, str(port)],
+                cwd=game_dir
+            )
         else:
             print(f"[錯誤] 找不到啟動檔: {script_path}")
 
