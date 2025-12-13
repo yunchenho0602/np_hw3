@@ -276,8 +276,8 @@ class PlayerClient:
     def main_menu(self):
         self.connect()
         while True:
-            print("\n=== 遊戲大廳 ===")
             if not self.user_data:
+                print("\n=== 遊戲大廳 ===")
                 print("1. 註冊")
                 print("2. 登入")
                 print("3. 離開")
