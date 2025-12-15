@@ -47,13 +47,7 @@ def start_game_process(game_id, room_id):
         stderr=subprocess.PIPE,
         text=True
     )
-    # time.sleep(0.5)
-    # if p.poll() is not None:
-    #     out, err = p.communicate()
-    #     print("[GAME SERVER FAILED]")
-    #     print(err)
-    #     return None
-
+    time.sleep(1.0)
     return game_port
 
 def handle_client(conn, addr):
@@ -240,8 +234,15 @@ def handle_client(conn, addr):
                 global room_id_counter
                 rid = str(room_id_counter)
                 room_id_counter += 1
+                gid = request['game_id']
+                conn_db = get_db_connection()
+                game_info = conn_db.execute("SELECT version FROM games WHERE name = ?", (gid,)).fetchone()
+                conn_db.close()
+
+                cur_ver = game_info['version']
+
                 with rooms_lock:
-                    rooms[rid] = {"game_id": request['game_id'], "players": [user_data['username']], "status": "WAITING"}
+                    rooms[rid] = {"game_id": request['game_id'], "version": cur_ver, "players": [user_data['username']], "status": "WAITING"}
                 response = {"status": "SUCCESS", "room_id": rid}
 
             elif action == "LIST_ROOMS":
@@ -254,62 +255,40 @@ def handle_client(conn, addr):
                 with rooms_lock:
                     room = rooms.get(rid)
 
-                    if room and room['status'] == "WAITING":
-                        # 1. 加入玩家
-                        room['players'].append(user_data['username'])
-
-                        # 2. 授予評分資格
-                        record_play(user_data['username'], room['game_id'])
-
-                        # 3. 啟動遊戲 Server
-                        g_port = start_game_process(room['game_id'], rid)
-                        room['status'] = "PLAYING"
-                        room['game_port'] = g_port
-
-                        # 4. 查詢遊戲版本
-                        conn_db = get_db_connection()
-                        g_info = conn_db.execute(
-                            "SELECT version FROM games WHERE name=?",
-                            (room['game_id'],)
-                        ).fetchone()
-                        conn_db.close()
-
-                        version = g_info['version'] if g_info else "1.0.0"
-
-                        # 5. 建立 game_start_info（給房主用）
-                        room['game_start_info'] = {
-                            "game_id": room['game_id'],
-                            "version": version,
-                            "game_ip": SERVER_IP,
-                            "game_port": g_port
-                        }
-
-                        # 6. 回傳給加入者（非常重要）
-                        response = {
-                            "status": "SUCCESS",
-                            "game_start": True,
-                            "game_id": room['game_id'],
-                            "version": version,
-                            "game_ip": SERVER_IP,
-                            "game_port": g_port
-                        }
-                    else:
+                    if not room or room['status'] != "WAITING":
                         response = {
                             "status": "FAIL",
                             "message": "房間已滿、不存在或已在遊戲中"
                         }
 
+                    else:
+                        try:
+                            room['players'].append(user_data['username'])
+                            record_play(user_data['username'], room['game_id'])
+                            room['status'] = "PLAYING"
+                            
+                            # 在 Lock 外啟動進程，避免阻塞其他房間
+                            g_port = start_game_process(room['game_id'], rid)
+                            room['game_port'] = g_port
+                            
+                            response = {"status": "SUCCESS", "game_start": False}
+                        except Exception as e:
+                            print(f"[錯誤] 啟動房間失敗: {e}")
+                            response = {"status": "FAIL", "message": f"系統錯誤: {str(e)}"}
 
             elif action == "CHECK_ROOM":
                 rid = request.get('room_id')
                 with rooms_lock:
                     room = rooms.get(rid)
 
-                    if room and room.get("status") == "PLAYING" and room.get("game_start_info"):
+                    if room and room.get("game_port"):
                         response = {
                             "status": "SUCCESS",
                             "game_start": True,
-                            **room['game_start_info']
+                            "game_id": room['game_id'],
+                            "version": room.get('version'),
+                            "game_ip": SERVER_IP,
+                            "game_port": room['game_port']
                         }
                     else:
                         response = {
@@ -317,6 +296,7 @@ def handle_client(conn, addr):
                             "game_start": False,
                             "players": room['players'] if room else []
                         }
+
             # --- 5. 評價系統 (RQU-6) ---
             elif action == "SUBMIT_REVIEW":
                 status, msg = add_review(request['game_name'], user_data['username'], request['rating'], request['comment'])

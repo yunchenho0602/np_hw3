@@ -1,8 +1,0 @@
-{
-    "game_name": "NewGameTemplate",
-    "version": "1.0.0",
-    "exe_file": "run.py",
-    "description": "請在此輸入遊戲描述",
-    "min_players": 2,
-    "max_players": 2
-}

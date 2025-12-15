@@ -15,7 +15,7 @@ def net(sock):
             state = msg
             print("\n狀態更新:", state)
 
-def main(user, ip, port):
+def main(ip, port):
     sock = socket.socket()
     sock.connect((ip,int(port)))
     threading.Thread(target=net,args=(sock,),daemon=True).start()
@@ -25,4 +25,4 @@ def main(user, ip, port):
         send_json(sock, {"cmd": cmd})
 
 if __name__=="__main__":
-    main(sys.argv[1],sys.argv[2],sys.argv[3])
+    main(sys.argv[1],sys.argv[2])

@@ -18,7 +18,7 @@ def draw(board,ox,screen):
                     (ox+x*BLOCK,y*BLOCK,BLOCK-1,BLOCK-1)
                 )
 
-def main(user,ip,port):
+def main(ip,port):
     global state
     sock=socket.socket()
     sock.connect((ip,int(port)))
@@ -53,4 +53,4 @@ def main(user,ip,port):
         clock.tick(60)
 
 if __name__=="__main__":
-    main(sys.argv[1],sys.argv[2],sys.argv[3])
+    main(sys.argv[1],sys.argv[2])

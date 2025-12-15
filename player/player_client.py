@@ -182,7 +182,7 @@ class PlayerClient:
             time.sleep(1) # 給伺服器一點啟動時間
             # 關鍵：cwd=game_dir 讓 run.py 能正確 import 自己的 protocol.py
             subprocess.run(
-                [sys.executable, script_path, self.user_data['username'], ip, str(port)],
+                [sys.executable, script_path, ip, str(port)],
                 cwd=game_dir
             )
         else:
@@ -261,20 +261,35 @@ class PlayerClient:
             print(f"[失敗] {res.get('message')}")
 
     def join_room(self, room_id):
-        """實作缺失的 join_room 函式 (RQU-5 P3 自動化下載)"""
         send_json(self.sock, {"action": "JOIN_ROOM", "room_id": room_id})
         res = recv_json(self.sock)
-        
-        if res['status'] == 'SUCCESS':
-            print("加入成功！正在校驗遊戲版本...")
-            # 確保最新版本 (由 Server 回傳的資訊進行檢查)
-            self.ensure_latest_version(res['game_id'], res['version'])
-            
-            if res.get('game_start'):
-                print("遊戲啟動中...")
-                self.start_game_subprocess(res['game_id'], res['game_ip'], res['game_port'])
-        else:
+
+        if res['status'] != 'SUCCESS':
             print("加入失敗:", res.get('message'))
+            return
+
+        print("加入成功！等待房主啟動遊戲...")
+
+        while True:
+            time.sleep(1)
+            send_json(self.sock, {"action": "CHECK_ROOM", "room_id": room_id})
+            check = recv_json(self.sock)
+
+            if check.get("game_start"):
+                print("[系統] 遊戲已啟動，正在校驗版本...")
+
+                self.ensure_latest_version(
+                    check['game_id'],
+                    check['version']
+                )
+
+                self.start_game_subprocess(
+                    check['game_id'],
+                    check['game_ip'],
+                    check['game_port']
+                )
+                break
+
 
     def main_menu(self):
         self.connect()
