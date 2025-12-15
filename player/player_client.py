@@ -88,7 +88,7 @@ class PlayerClient:
                 file_data.extend(chunk)
             
             # 存放到 downloads/{username}/{game_id}
-            download_dir = os.path.join(parent_dir, "downloads", self.user_data['username'], game_id)
+            download_dir = os.path.join(current_dir, "downloads", self.user_data['username'], game_id)
             if not os.path.exists(download_dir):
                 os.makedirs(download_dir)
             
@@ -174,8 +174,8 @@ class PlayerClient:
     def start_game_subprocess(self, game_id, ip, port):
         time.sleep(1.5)
         """啟動解壓後的遊戲 run.py"""
-        game_dir = os.path.join(parent_dir, "downloads", self.user_data['username'], game_id)
-        script_path = os.path.join(game_dir, "run.py")
+        game_dir = os.path.join(current_dir, "downloads", self.user_data['username'], game_id)
+        script_path = os.path.join(game_dir, "client/run.py")
         
         if os.path.exists(script_path):
             print(f"\n[啟動] 正在連線至 {ip}:{port}")

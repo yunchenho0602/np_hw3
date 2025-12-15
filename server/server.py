@@ -6,6 +6,7 @@ import os
 import subprocess
 import shutil
 import zipfile
+import time
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -34,11 +35,24 @@ def start_game_process(game_id, room_id):
     temp_sock.close()
 
     game_dir = os.path.join(current_dir, "uploaded_game", game_id)
-    server_script = os.path.join(game_dir, "game_server.py")
+    server_dir = os.path.join(game_dir, "server")
+    server_script = os.path.join(server_dir, "game_server.py")
 
     cmd = [sys.executable, server_script, str(game_port), str(room_id)]
 
-    subprocess.Popen(cmd, cwd=game_dir)
+    subprocess.Popen(
+        cmd, 
+        cwd=server_dir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    # time.sleep(0.5)
+    # if p.poll() is not None:
+    #     out, err = p.communicate()
+    #     print("[GAME SERVER FAILED]")
+    #     print(err)
+    #     return None
 
     return game_port
 

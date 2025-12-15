@@ -1,5 +1,7 @@
 import socket,threading,time,sys,os
 from game_logic import TetrisGame
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from protocol import send_json, recv_json
 
 current = os.path.dirname(os.path.abspath(__file__))

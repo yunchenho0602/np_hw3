@@ -1,22 +1,28 @@
-import sys
-from protocol import send_json, recv_json # 使用包內自帶的協定
+import sys,socket,threading
+from protocol import send_json,recv_json
 
-def main():
-    # 大廳啟動指令格式: python run.py [username] [server_ip] [game_port]
-    if len(sys.argv) < 4:
-        print("Usage: python run.py <username> <ip> <port>")
-        sys.exit(1)
+pid = None
+state = None
 
-    username = sys.argv[1]
-    server_ip = sys.argv[2]
-    server_port = int(sys.argv[3])
+def net(sock):
+    global pid,state
+    while True:
+        msg = recv_json(sock)
+        if "pid" in msg:
+            pid = msg["pid"]
+            print("你的 pid:", pid)
+        else:
+            state = msg
+            print("\n狀態更新:", state)
 
-    print(f"--- 遊戲已啟動 ---")
-    print(f"玩家名稱: {username}")
-    print(f"連線目標: {server_ip}:{server_port}")
+def main(user, ip, port):
+    sock = socket.socket()
+    sock.connect((ip,int(port)))
+    threading.Thread(target=net,args=(sock,),daemon=True).start()
 
-    # TODO: 開發者在此建立 GUI 並連線至遊戲伺服器
-    # 例如: client_socket.connect((server_ip, server_port))
+    while True:
+        cmd = input("> ")
+        send_json(sock, {"cmd": cmd})
 
-if __name__ == "__main__":
-    main()
+if __name__=="__main__":
+    main(sys.argv[1],sys.argv[2],sys.argv[3])

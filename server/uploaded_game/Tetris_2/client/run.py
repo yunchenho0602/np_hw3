@@ -1,7 +1,6 @@
 import pygame,sys,socket,threading
 from protocol import send_json,recv_json
 from constants import *
-
 state=None
 
 def net(sock):
