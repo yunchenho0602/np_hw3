@@ -170,30 +170,52 @@ def handle_client(conn, addr):
                 response = {"status": "SUCCESS", "games": my_games}
 
             elif action == "UPDATE_GAME":
-                # 接收新檔案並覆蓋舊檔案
+                # 1. 接收新檔案並覆蓋舊檔案
                 send_json(conn, {"status": "READY"})
+                game_name = request['game_name'] # 確保有拿到 game_name
                 zip_name = request['filename']
                 zip_path = os.path.join(current_dir, "uploaded_game", zip_name)
                 
-                with open(zip_path, "wb") as f:
-                    received = 0
-                    while received < request['size']:
-                        chunk = recv_frame(conn)
-                        if not chunk: break
-                        f.write(chunk)
-                        received += len(chunk)
-                
-                # 自動解壓覆蓋 (確保玩家玩到的是新版)
-                extract_path = zip_path.replace(".zip", "")
-                if os.path.exists(extract_path):
-                    shutil.rmtree(extract_path)
-                with zipfile.ZipFile(zip_path, 'r') as z:
-                    z.extractall(extract_path)
+                try:
+                    with open(zip_path, "wb") as f:
+                        received = 0
+                        while received < request['size']:
+                            chunk = recv_frame(conn)
+                            if not chunk: break
+                            f.write(chunk)
+                            received += len(chunk)
+                    
+                    # 2. 自動解壓覆蓋
+                    extract_path = zip_path.replace(".zip", "")
+                    if os.path.exists(extract_path):
+                        shutil.rmtree(extract_path)
+                    with zipfile.ZipFile(zip_path, 'r') as z:
+                        z.extractall(extract_path)
 
-                # 更新資料庫
-                from db_server import update_game_version_db
-                update_game_version_db(request['game_name'], user_data['username'], request['version'], request['description'])
-                response = {"status": "SUCCESS", "message": f"遊戲 {request['game_name']} 已更新至 v{request['version']}"}
+                    # --- 關鍵修正：重新產生玩家下載專用的 client-only zip ---
+                    client_dir = os.path.join(extract_path, "client")
+                    # 這是 DOWNLOAD action 會讀取的路徑: f"{game_id}.zip"
+                    player_zip = os.path.join(current_dir, "uploaded_game", f"{game_name}.zip")
+
+                    if not os.path.isdir(client_dir):
+                        raise Exception("更新包中缺少 client 資料夾")
+
+                    # 重新打包，確保結構與 UPLOAD 時一致
+                    shutil.make_archive(
+                        player_zip.replace(".zip", ""),
+                        "zip",
+                        client_dir
+                    )
+                    # ---------------------------------------------------
+
+                    # 3. 更新資料庫
+                    from db_server import update_game_version_db
+                    update_game_version_db(game_name, user_data['username'], request['version'], request['description'])
+                    
+                    response = {"status": "SUCCESS", "message": f"遊戲 {game_name} 已更新至 v{request['version']}"}
+                    
+                except Exception as e:
+                    response = {"status": "FAIL", "message": f"更新失敗: {e}"}
 
             elif action == "DELETE_GAME":
                 g_name = request['game_name']

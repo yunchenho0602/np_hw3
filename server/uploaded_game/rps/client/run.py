@@ -4,18 +4,21 @@ import threading
 import os
 from protocol import send_json, recv_json
 
-last_msg_hash = None
+last_msg_hash = None  # 用來記錄上次顯示的內容快照
 
 def clear_screen():
+    # 根據作業系統執行清空指令
     os.system('cls' if os.name == 'nt' else 'clear')
 
 def render_ui(msg, pid):
     global last_msg_hash
     
+    # 提取關鍵資訊來判斷是否需要刷新
+    # 這裡我們將目前的狀態轉為字串做比較
     current_hash = str(msg.get("players")) + str(msg.get("result")) + str(msg.get("player_count"))
     
     if current_hash == last_msg_hash:
-        return
+        return # 內容沒變，不刷新
     
     last_msg_hash = current_hash
     
@@ -26,10 +29,13 @@ def render_ui(msg, pid):
     print(f" 目前人數: {msg.get('player_count')}/2")
     print("----------------------------------------")
     
+    # 顯示玩家出拳狀態
     players_data = msg.get("players", {})
     for p_id, choice in players_data.items():
+        # 如果是自己，顯示出拳；如果是對手，且遊戲沒結束，顯示隱藏
         display_choice = "思考中..."
         if choice:
+            # 只有當結果公告中包含「獲勝」或「平手」時才顯示對方的拳，增加神祕感
             if "結果" in msg.get("result", "") or str(p_id) == str(pid):
                 display_choice = choice.upper()
             else:
@@ -66,6 +72,7 @@ def main(ip, port):
         print(f"[錯誤] 無法連線至伺服器: {e}")
         return
 
+    # 啟動接收執行緒 (Daemon)
     threading.Thread(target=net, args=(sock,), daemon=True).start()
 
     while True:

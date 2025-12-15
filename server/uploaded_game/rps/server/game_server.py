@@ -4,8 +4,8 @@ import sys
 import time
 from protocol import send_json, recv_json
 
-players = {}   
-states = {}    
+players = {}   # pid -> socket
+states = {}    # pid -> player choice (rock/paper/scissors)
 lock = threading.Lock()
 next_pid = 0
 
@@ -35,6 +35,7 @@ def handle(conn, pid):
             msg = recv_json(conn)
             if not msg:
                 break
+            # 接收格式: {"choice": "rock"}
             choice = msg.get("choice")
             if choice in ["rock", "paper", "scissors"]:
                 with lock:
@@ -53,9 +54,10 @@ def game_loop():
         with lock:
             if not players: continue
             
+            # 確保每個 pid 都在 snapshot 中，即使還沒出拳
             current_choices = {}
             for p_id in players.keys():
-                current_choices[p_id] = states.get(p_id)
+                current_choices[p_id] = states.get(p_id) # 如果沒出拳會是 None
 
             result_msg = judge(current_choices)
             snapshot = {
@@ -79,6 +81,7 @@ def main(port):
 
     print(f"[RPS 伺服器] 啟動於 Port {port}，等待玩家...")
     
+    # 啟動狀態廣播執行緒
     threading.Thread(target=game_loop, daemon=True).start()
 
     while True:
@@ -88,7 +91,7 @@ def main(port):
                 pid = next_pid
                 next_pid += 1
                 players[pid] = c
-                states[pid] = None 
+                states[pid] = None # 初始狀態為未出拳
                 
                 print(f"[連線] 玩家 {pid} 已加入 ({addr})")
                 send_json(c, {"pid": pid})
