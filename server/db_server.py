@@ -17,7 +17,7 @@ def init_db():
         cursor.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, role TEXT DEFAULT "player")')
         cursor.execute('''CREATE TABLE IF NOT EXISTS games (
             game_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, 
-            version TEXT, description TEXT, exe_path TEXT, author_username TEXT)''')
+            version TEXT, description TEXT, exe_path TEXT, author_username TEXT, max_players INTEGER DEFAULT 2)''')
         cursor.execute('CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, game_name TEXT, username TEXT, rating INTEGER, comment TEXT)')
         cursor.execute('CREATE TABLE IF NOT EXISTS play_history (username TEXT, game_name TEXT, PRIMARY KEY (username, game_name))')
         conn.commit()
@@ -57,14 +57,14 @@ def login_check(username, password):
             return dict(user)
         return None
 
-def add_game(name, version, description, exe_path, author):
+def add_game(name, version, description, exe_path, author, max_players):
     """將上架的遊戲資訊存入資料庫 (符合 PDF Step 6)"""
     with db_lock:
         conn = get_db_connection()
         try:
             conn.execute(
-                "INSERT INTO games (name, version, description, exe_path, author_username) VALUES (?, ?, ?, ?, ?)",
-                (name, version, description, exe_path, author)
+                "INSERT INTO games (name, version, description, exe_path, author_username, max_players) VALUES (?, ?, ?, ?, ?, ?)",
+                (name, version, description, exe_path, author, max_players)
             )
             conn.commit()
             return True
@@ -84,15 +84,15 @@ def get_games_by_author(author):
         conn.close()
         return [dict(g) for g in games]
 
-def update_game_version_db(name, author, new_version, new_desc):
+def update_game_version_db(name, author, new_version, new_desc, new_max_players):
     """RQU-4: 更新遊戲版本資訊"""
     with db_lock:
         conn = get_db_connection()
         try:
             # 明確指定欄位名稱，避免 game_id 造成數量不符
             conn.execute(
-                "UPDATE games SET version = ?, description = ? WHERE name = ? AND author_username = ?",
-                (new_version, new_desc, name, author)
+                "UPDATE games SET version = ?, description = ?, max_players = ? WHERE name = ? AND author_username = ?",
+                (new_version, new_desc, new_max_players, name, author)
             )
             conn.commit()
             return True

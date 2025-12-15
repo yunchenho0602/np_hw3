@@ -97,11 +97,12 @@ class DevClient:
         g_name = input(f"遊戲名稱 [{config['game_name']}]: ").strip() or config['game_name']
         g_desc = input(f"遊戲描述 [{config['description']}]: ").strip() or config['description']
         g_ver  = input(f"版本號碼 [{config['version']}]: ").strip() or config['version']
+        max_p = input(f"最大玩家人數 (預設 2): ").strip() or "2"
         
         print(f"\n[待上架預覽]\n名稱: {g_name}\n描述: {g_desc}\n版本: {g_ver}")
         if input("確認上傳？(y/n): ").lower() != 'y': return
 
-        self._send_zip_payload(source_dir, g_name, g_ver, g_desc, folder_name, "UPLOAD")
+        self._send_zip_payload(source_dir, g_name, g_ver, g_desc, folder_name, "UPLOAD", max_players=int(max_p))
 
     def update_game_flow(self):
         """實作 RQU-4：更新遊戲版本"""
@@ -149,7 +150,12 @@ class DevClient:
         # 確認時就會看到正確的版本號了
         if input(f"確認更新 {target_game} 至 v{new_ver}？(y/n): ").lower() != 'y': 
             return
-        self._send_zip_payload(source_dir, target_game, new_ver, merged_desc, target_game, "UPDATE_GAME")
+        
+        current_max_p = my_games[idx].get('max_players', 2)
+        new_max_p_input = input(f"修改最大人數 [目前 {current_max_p}]: ").strip() or str(current_max_p)
+        new_max_p = int(new_max_p_input)
+
+        self._send_zip_payload(source_dir, target_game, new_ver, merged_desc, target_game, "UPDATE_GAME", max_players=new_max_p)
 
     def remove_game_flow(self):
         """實作 RQU-4：下架遊戲"""
@@ -168,8 +174,7 @@ class DevClient:
             send_json(self.sock, {"action": "DELETE_GAME", "game_name": target_game})
             print(recv_json(self.sock).get('message'))
 
-    def _send_zip_payload(self, source_dir, g_name, g_ver, g_desc, folder_name, action):
-        """通用 ZIP 打包與上傳邏輯"""
+    def _send_zip_payload(self, source_dir, g_name, g_ver, g_desc, folder_name, action, max_players=2):
         memory_file = io.BytesIO()
         with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
             for root, _, files in os.walk(source_dir):
@@ -177,14 +182,26 @@ class DevClient:
                     zf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), source_dir))
         
         zip_data = memory_file.getvalue()
-        send_json(self.sock, {
-            "action": action, "game_name": g_name, "version": g_ver,
-            "description": g_desc, "filename": f"{folder_name}.zip", "size": len(zip_data)
-        })
         
-        if recv_json(self.sock).get('status') == 'READY':
+        payload = {
+            "action": action, 
+            "game_name": g_name, 
+            "version": g_ver,
+            "description": g_desc, 
+            "filename": f"{folder_name}.zip", 
+            "size": len(zip_data),
+            "max_players": max_players 
+        }
+        
+        send_json(self.sock, payload)
+        
+        res = recv_json(self.sock)
+        if res.get('status') == 'READY':
             send_frame(self.sock, zip_data)
-            print(recv_json(self.sock).get('message'))
+            final_res = recv_json(self.sock)
+            print(final_res.get('message'))
+        else:
+            print(f"[失敗] 伺服器拒絕上傳: {res.get('message')}")
 
     def view_my_games(self):
         send_json(self.sock, {"action": "LIST_MY_GAMES"})

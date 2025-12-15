@@ -197,7 +197,7 @@ class PlayerClient:
         if not rooms: print("目前無房間，快去建立一個吧！"); return
 
         for r in rooms:
-            print(f"房號: {r['room_id']} | 遊戲: {r['game_id']} | 人數: {r['player_count']}/2 | 狀態: {r['status']}")
+            print(f"房號: {r['room_id']} | 遊戲: {r['game_id']} | 人數: {r['player_count']}/{r.get('max_players', 2)}")
         
         rid = input("\n請輸入房間 ID 加入 (輸入 q 返回): ").strip()
         if rid.lower() == 'q' or not rid: return
@@ -253,7 +253,8 @@ class PlayerClient:
                     else:
                         # 顯示目前人數 (動畫效果)
                         players = check_res.get("players", [])
-                        sys.stdout.write(f"\r目前人數: {len(players)}/2 ...")
+                        max_p = check_res.get("max_players", 2)
+                        sys.stdout.write(f"\r目前人數: {len(players)}/{max_p} ...")
                         sys.stdout.flush()
             except KeyboardInterrupt:
                 print("\n[系統] 已取消等待房間。")

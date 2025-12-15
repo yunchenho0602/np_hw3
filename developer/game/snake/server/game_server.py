@@ -34,20 +34,35 @@ def game_loop():
             
             dead_pids = []
             for pid in list(snakes.keys()):
-                head = [snakes[pid][0][0] + dirs[pid][0], snakes[pid][0][1] + dirs[pid][1]]
+                # 1. 計算新的頭部位置，並使用 % 運算子實現穿牆
+                # (x + dx) % W 會讓 20 變成 0，讓 -1 變成 19
+                new_x = (snakes[pid][0][0] + dirs[pid][0]) % W
+                new_y = (snakes[pid][0][1] + dirs[pid][1]) % H
+                head = [new_x, new_y]
                 
-                # 撞牆或撞身體檢查
-                if not (0 <= head[0] < W and 0 <= head[1] < H) or any(head in s for s in snakes.values()):
+                # 2. 修改碰撞檢查：現在不再檢查撞牆，只檢查「撞到自己或其他蛇的身體」
+                # 注意：any() 檢查時要排除掉「這條蛇即將移動走的身軀末端」或是單純檢查新頭部是否在現有蛇群中
+                collision = False
+                for s_pid, s_body in snakes.items():
+                    if head in s_body:
+                        collision = True
+                        break
+                
+                if collision:
                     dead_pids.append(pid)
                     continue
 
+                # 3. 正常的移動邏輯
                 snakes[pid].insert(0, head)
                 if head == food:
+                    # 吃到食物，重新生成食物位置
                     food = [random.randint(0, W-1), random.randint(0, H-1)]
                 else:
+                    # 沒吃到食物，移除尾巴
                     snakes[pid].pop()
 
-            if dead_pids: game_over = True
+            if dead_pids:
+                game_over = True
 
             snapshot = {"snakes": snakes, "food": food, "game_over": game_over}
             for p_sock in players.values():

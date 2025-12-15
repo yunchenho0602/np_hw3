@@ -124,6 +124,7 @@ def handle_client(conn, addr):
                 desc = request.get("description")
                 filename = request.get("filename")
                 file_size = request.get("size")
+                max_players = request.get("max_players", 2)
 
                 # 1. 準備接收檔案
                 zip_path = os.path.join(current_dir, "uploaded_game", filename)
@@ -157,7 +158,7 @@ def handle_client(conn, addr):
                         
                     # 2. 寫入資料庫 (符合 PDF Step 6)
                     # 我們將 zip 檔名作為路徑存入
-                    if add_game(game_name, version, desc, filename, user_data['username']):
+                    if add_game(game_name, version, desc, filename, user_data['username'], max_players):
                         response = {"status": "SUCCESS", "message": f"遊戲 {game_name} 上架成功"}
                     else:
                         response = {"status": "FAIL", "message": "資料庫寫入失敗"}
@@ -210,7 +211,7 @@ def handle_client(conn, addr):
 
                     # 3. 更新資料庫
                     from db_server import update_game_version_db
-                    update_game_version_db(game_name, user_data['username'], request['version'], request['description'])
+                    update_game_version_db(game_name, user_data['username'], request['version'], request['description'], request.get('max_players', 2))
                     
                     response = {"status": "SUCCESS", "message": f"遊戲 {game_name} 已更新至 v{request['version']}"}
                     
@@ -258,45 +259,49 @@ def handle_client(conn, addr):
                 room_id_counter += 1
                 gid = request['game_id']
                 conn_db = get_db_connection()
-                game_info = conn_db.execute("SELECT version FROM games WHERE name = ?", (gid,)).fetchone()
+                game_info = conn_db.execute("SELECT version, max_players FROM games WHERE name = ?", (gid,)).fetchone()
                 conn_db.close()
 
-                cur_ver = game_info['version']
+                if not game_info:
+                    response = {"status": "FAIL", "message": "找不到該遊戲資訊"}
+                else:
+                    cur_ver = game_info['version']
+                    max_p = game_info['max_players']
 
                 with rooms_lock:
-                    rooms[rid] = {"game_id": request['game_id'], "version": cur_ver, "players": [user_data['username']], "status": "WAITING"}
+                    rooms[rid] = {
+                        "game_id": gid, 
+                        "version": cur_ver, 
+                        "players": [user_data['username']], 
+                        "max_players": max_p, # 記錄此房間的人數上限
+                        "status": "WAITING"
+                    }
                 response = {"status": "SUCCESS", "room_id": rid}
 
             elif action == "LIST_ROOMS":
                 with rooms_lock:
-                    r_list = [{"room_id": k, "game_id": v["game_id"], "player_count": len(v["players"]), "status": v["status"]} for k, v in rooms.items()]
+                    r_list = [{"room_id": k, "game_id": v["game_id"], "player_count": len(v["players"]), "max_players":v["max_players"], "status": v["status"]} for k, v in rooms.items()]
                 response = {"status": "SUCCESS", "rooms": r_list}
 
             elif action == "JOIN_ROOM":
                 rid = request.get('room_id')
                 with rooms_lock:
                     room = rooms.get(rid)
-
                     if not room or room['status'] != "WAITING":
-                        response = {
-                            "status": "FAIL",
-                            "message": "房間已滿、不存在或已在遊戲中"
-                        }
-
+                        response = {"status": "FAIL", "message": "房間無法加入"}
+                    elif len(room['players']) >= room['max_players']:
+                        response = {"status": "FAIL", "message": "房間已滿"}
                     else:
-                        try:
-                            room['players'].append(user_data['username'])
-                            record_play(user_data['username'], room['game_id'])
+                        room['players'].append(user_data['username'])
+
+                        # 檢查是否達到啟動條件
+                        if len(room['players']) == room['max_players']:
                             room['status'] = "PLAYING"
-                            
-                            # 在 Lock 外啟動進程，避免阻塞其他房間
                             g_port = start_game_process(room['game_id'], rid)
                             room['game_port'] = g_port
-                            
+                            response = {"status": "SUCCESS", "game_start": True}
+                        else:
                             response = {"status": "SUCCESS", "game_start": False}
-                        except Exception as e:
-                            print(f"[錯誤] 啟動房間失敗: {e}")
-                            response = {"status": "FAIL", "message": f"系統錯誤: {str(e)}"}
 
             elif action == "CHECK_ROOM":
                 rid = request.get('room_id')
@@ -316,7 +321,8 @@ def handle_client(conn, addr):
                         response = {
                             "status": "SUCCESS",
                             "game_start": False,
-                            "players": room['players'] if room else []
+                            "players": room['players'] if room else [],
+                            "max_players": room['max_players'] if room else 2
                         }
 
             # --- 5. 評價系統 (RQU-6) ---
