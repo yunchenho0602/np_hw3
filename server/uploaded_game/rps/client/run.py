@@ -4,6 +4,8 @@ import threading
 import os
 from protocol import send_json, recv_json
 
+#good
+
 last_msg_hash = None
 
 def clear_screen():

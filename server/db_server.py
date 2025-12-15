@@ -122,6 +122,7 @@ def delete_game_db(name, author):
 def record_play(username, game_name):
     with db_lock:
         conn = get_db_connection()
+        print(f"[DB Debug] 嘗試寫入遊玩紀錄: 使用者={username}, 遊戲={game_name}", flush=True)
         conn.execute("INSERT OR IGNORE INTO play_history (username, game_name) VALUES (?, ?)", (username, game_name))
         conn.commit()
         conn.close()
@@ -129,8 +130,11 @@ def record_play(username, game_name):
 def add_review(game_name, username, rating, comment):
     with db_lock:
         conn = get_db_connection()
+        print(f"[DB Debug] 檢查評價資格: 使用者={username}, 遊戲={game_name}", flush=True)
         played = conn.execute("SELECT 1 FROM play_history WHERE username=? AND game_name=?", (username, game_name)).fetchone()
-        if not played: return False, "需遊玩過才能評分"
+        if not played: 
+            print(f"[DB Debug] 資格檢查失敗！資料庫找不到該紀錄") # 加上這行
+            return False, "需遊玩過才能評分"
         conn.execute("INSERT INTO reviews (game_name, username, rating, comment) VALUES (?, ?, ?, ?)", (game_name, username, rating, comment))
         conn.commit()
         conn.close()

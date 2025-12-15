@@ -297,6 +297,12 @@ def handle_client(conn, addr):
                         # 檢查是否達到啟動條件
                         if len(room['players']) == room['max_players']:
                             room['status'] = "PLAYING"
+                            print(f"[Debug] 遊戲達到上限，準備紀錄遊玩歷史: {room['players']} 正在玩 {room['game_id']}", flush=True) # 新增這行
+    
+                            for player_name in room['players']:
+                                record_play(player_name, room['game_id']) 
+                            
+                            print(f"[Debug] 遊玩紀錄寫入完成", flush=True) # 新增這行
                             g_port = start_game_process(room['game_id'], rid)
                             room['game_port'] = g_port
                             response = {"status": "SUCCESS", "game_start": True}
