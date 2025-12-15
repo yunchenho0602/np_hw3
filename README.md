@@ -58,6 +58,10 @@
 
 環境安裝
 ---
+下載檔案
+```python
+git clone https://github.com/yunchenho0602/np_hw3.git
+```
 專案執行所需套件已整理至requirements.txt中，請在專案根目錄執行
 ```python
 pip install -r requirements.txt
